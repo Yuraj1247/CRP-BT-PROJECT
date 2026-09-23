@@ -6,20 +6,28 @@ dotenv.config();
  * Creates Nodemailer Transporter using ADMIN_EMAIL and ADMIN_APP_PASSWORD
  */
 function createTransporter() {
-  const adminEmail = process.env.ADMIN_EMAIL;
-  const adminPassword = process.env.ADMIN_APP_PASSWORD;
+  const adminEmail = (process.env.ADMIN_EMAIL || '').trim();
+  const adminPassword = (process.env.ADMIN_APP_PASSWORD || '').trim().replace(/\s+/g, '');
 
   if (!adminEmail || !adminPassword) {
     return null;
   }
 
-  // Standard Gmail configuration with sanitized app password (spaces stripped)
+  // Use direct SSL on port 465 with explicit connection timeouts for cloud environments like Render
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
-      user: adminEmail.trim(),
-      pass: adminPassword.trim().replace(/\s+/g, '')
-    }
+      user: adminEmail,
+      pass: adminPassword
+    },
+    tls: {
+      rejectUnauthorized: false
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
   });
 }
 
@@ -37,8 +45,8 @@ export async function sendCertificateEmail({
   digitalSignature,
   certificateImageBase64 = null
 }) {
-  const adminEmail = process.env.ADMIN_EMAIL;
-  const adminPassword = process.env.ADMIN_APP_PASSWORD;
+  const adminEmail = (process.env.ADMIN_EMAIL || '').trim();
+  const adminPassword = (process.env.ADMIN_APP_PASSWORD || '').trim().replace(/\s+/g, '');
 
   if (!adminEmail || !adminPassword || adminEmail === 'your_admin_email@gmail.com') {
     console.log('ℹ️  Nodemailer: ADMIN_EMAIL or ADMIN_APP_PASSWORD not configured in .env. Email dispatch simulated.');

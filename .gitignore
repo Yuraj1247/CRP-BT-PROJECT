@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Environment variables & secrets
+.env
+*/.env
+serviceAccountKey.json
+backend/serviceAccountKey.json
+backend/keys/private_key.pem
+
+# Build outputs
+dist/
+*/dist/
+build/
+*/build/
+
+# Logs & temp
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

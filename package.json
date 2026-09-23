@@ -1,0 +1,24 @@
+{
+  "name": "crp-secure-certificate-verification",
+  "version": "1.0.0",
+  "description": "Secure Certificate Generation, RSA Digital Signature, AES Storage, Blockchain Ledger, and QR Verification",
+  "scripts": {
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "test:crypto": "npm run test:crypto --prefix backend",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend"
+  },
+  "keywords": [
+    "cryptography",
+    "rsa",
+    "aes",
+    "sha256",
+    "blockchain",
+    "certificates",
+    "qr-code",
+    "nodemailer",
+    "firebase"
+  ],
+  "author": "",
+  "license": "MIT"
+}

@@ -13,7 +13,7 @@ function createTransporter() {
     return null;
   }
 
-  // Use direct SSL on port 465 with explicit connection timeouts for cloud environments like Render
+  // Use direct SSL on port 465 with explicit connection timeouts
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
@@ -25,10 +25,109 @@ function createTransporter() {
     tls: {
       rejectUnauthorized: false
     },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000
   });
+}
+
+/**
+ * Sends email via Brevo REST API (HTTPS Port 443 - completely unblocked on Render / cloud)
+ */
+async function sendViaBrevo({
+  apiKey,
+  adminEmail,
+  issuerName,
+  recipientEmail,
+  recipientName,
+  subject,
+  htmlContent,
+  certificateImageBase64,
+  certificateId
+}) {
+  const payload = {
+    sender: { name: issuerName, email: adminEmail },
+    to: [{ email: recipientEmail, name: recipientName }],
+    subject,
+    htmlContent
+  };
+
+  if (certificateImageBase64) {
+    try {
+      const rawBase64 = certificateImageBase64.replace(/^data:image\/\w+;base64,/, '');
+      payload.attachment = [{
+        name: `${certificateId}.png`,
+        content: rawBase64
+      }];
+    } catch (e) {
+      console.warn('Could not attach image to Brevo payload:', e.message);
+    }
+  }
+
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': apiKey.trim(),
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+  if (res.ok) {
+    return { sent: true, messageId: data.messageId || 'brevo-success' };
+  } else {
+    throw new Error(data.message || JSON.stringify(data));
+  }
+}
+
+/**
+ * Sends email via Resend REST API (HTTPS Port 443 - completely unblocked on Render / cloud)
+ */
+async function sendViaResend({
+  apiKey,
+  issuerName,
+  recipientEmail,
+  subject,
+  htmlContent,
+  certificateImageBase64,
+  certificateId
+}) {
+  const payload = {
+    from: `${issuerName} <onboarding@resend.dev>`,
+    to: [recipientEmail],
+    subject,
+    html: htmlContent
+  };
+
+  if (certificateImageBase64) {
+    try {
+      const rawBase64 = certificateImageBase64.replace(/^data:image\/\w+;base64,/, '');
+      payload.attachments = [{
+        filename: `${certificateId}.png`,
+        content: rawBase64
+      }];
+    } catch (e) {
+      console.warn('Could not attach image to Resend payload:', e.message);
+    }
+  }
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey.trim()}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+  if (res.ok && data.id) {
+    return { sent: true, messageId: data.id };
+  } else {
+    throw new Error(data.message || JSON.stringify(data));
+  }
 }
 
 /**
@@ -47,19 +146,8 @@ export async function sendCertificateEmail({
 }) {
   const adminEmail = (process.env.ADMIN_EMAIL || '').trim();
   const adminPassword = (process.env.ADMIN_APP_PASSWORD || '').trim().replace(/\s+/g, '');
-
-  if (!adminEmail || !adminPassword || adminEmail === 'your_admin_email@gmail.com') {
-    console.log('ℹ️  Nodemailer: ADMIN_EMAIL or ADMIN_APP_PASSWORD not configured in .env. Email dispatch simulated.');
-    return {
-      sent: false,
-      reason: 'Email credentials not set in backend/.env (ADMIN_EMAIL & ADMIN_APP_PASSWORD)'
-    };
-  }
-
-  const transporter = createTransporter();
-  if (!transporter) {
-    return { sent: false, reason: 'Failed to create mail transporter' };
-  }
+  const brevoApiKey = (process.env.BREVO_API_KEY || '').trim();
+  const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
 
   const attachments = [];
   let hasImageAttachment = false;
@@ -71,7 +159,7 @@ export async function sendCertificateEmail({
         filename: `${certificateId}.png`,
         content: Buffer.from(base64Data, 'base64'),
         contentType: 'image/png',
-        cid: 'certificate_img' // Content-ID for inline embedding
+        cid: 'certificate_img'
       });
       hasImageAttachment = true;
     } catch (err) {
@@ -169,33 +257,91 @@ export async function sendCertificateEmail({
 
         <div class="footer">
           Issued by ${issuerName} &bull; Secured with SHA-256 & RSA-2048<br>
-          Authorized Email Relay: ${adminEmail}
+          Authorized Email Relay: ${adminEmail || 'admin@certificate-authority.edu'}
         </div>
       </div>
     </body>
     </html>
   `;
 
+  const subject = `Official Certificate: ${courseTitle} - ${recipientName} (${certificateId})`;
+
+  // 1. If Brevo API Key is configured, use HTTPS REST API (Cloud friendly, never blocked on Render)
+  if (brevoApiKey) {
+    try {
+      const result = await sendViaBrevo({
+        apiKey: brevoApiKey,
+        adminEmail: adminEmail || 'auth.designaurastudios@gmail.com',
+        issuerName,
+        recipientEmail,
+        recipientName,
+        subject,
+        htmlContent,
+        certificateImageBase64,
+        certificateId
+      });
+      console.log(`✉️ Brevo REST email dispatched successfully to ${recipientEmail}:`, result.messageId);
+      return result;
+    } catch (err) {
+      console.warn('⚠️ Brevo API Error, falling back:', err.message);
+    }
+  }
+
+  // 2. If Resend API Key is configured, use HTTPS REST API
+  if (resendApiKey) {
+    try {
+      const result = await sendViaResend({
+        apiKey: resendApiKey,
+        issuerName,
+        recipientEmail,
+        subject,
+        htmlContent,
+        certificateImageBase64,
+        certificateId
+      });
+      console.log(`✉️ Resend REST email dispatched successfully to ${recipientEmail}:`, result.messageId);
+      return result;
+    } catch (err) {
+      console.warn('⚠️ Resend API Error, falling back:', err.message);
+    }
+  }
+
+  // 3. Fallback to Nodemailer SMTP (Local dev or unblocked servers)
+  if (!adminEmail || !adminPassword || adminEmail === 'your_admin_email@gmail.com') {
+    return {
+      sent: false,
+      reason: 'Email credentials not set (ADMIN_EMAIL & ADMIN_APP_PASSWORD)'
+    };
+  }
+
+  const transporter = createTransporter();
+  if (!transporter) {
+    return { sent: false, reason: 'Failed to create mail transporter' };
+  }
+
   try {
     const mailOptions = {
       from: `"${issuerName}" <${adminEmail}>`,
       to: recipientEmail,
-      subject: `Official Certificate: ${courseTitle} - ${recipientName} (${certificateId})`,
+      subject,
       html: htmlContent,
       attachments
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Certificate email sent successfully to ${recipientEmail}: ${info.messageId}`);
+    console.log(`✉️ Certificate email sent successfully via SMTP to ${recipientEmail}: ${info.messageId}`);
     return {
       sent: true,
       messageId: info.messageId
     };
   } catch (error) {
-    console.error(`❌ Failed to send certificate email to ${recipientEmail}:`, error.message);
+    console.error(`❌ SMTP delivery failed:`, error.message);
+    const isTimeout = error.message.includes('timeout') || error.code === 'ETIMEDOUT' || error.message.includes('ETIMEDOUT');
     return {
       sent: false,
-      reason: error.message
+      reason: isTimeout
+        ? 'Render Free Tier blocks outbound SMTP (ports 25, 465, 587). Emails send perfectly on local machine or by adding a free BREVO_API_KEY / RESEND_API_KEY.'
+        : error.message
     };
   }
 }

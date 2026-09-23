@@ -138,5 +138,15 @@
     "previousHash": "86d7c29e945bf95740419d62e9bb9e627be2ada1b0c63dfc242cc600121344ab",
     "nonce": 0,
     "blockHash": "3e2baab762276e8d534bc934745f323a287958e7ca97a0fe1c69bfac55be9c51"
+  },
+  {
+    "index": 14,
+    "timestamp": "2026-09-23T07:04:09.389Z",
+    "certificateId": "CERT-2026-5A0668BA",
+    "certificateHash": "f8689eda313de78d0077af55fb7a07c8f9007e65a880907fd091f2c131fb3c6b",
+    "signature": "aAuWb4l1ZwDGd1npRqSFPYo4SpOMWzAA/WAesXOk+zd+eLkLUuchHobvzgunF/TWanol5EKizJpEPVZ9DF37G/fycWtl+BsPOEfDe4z6JrSkrNT5ZJcg3QrQz8G+60B9qUKAYQSs4kM+/ACUheBUbw/vhwSwrSqQ+IbGbAdYMkKhouURBMdBbSTnyVBeusni+XeBJTRA5lAygYGJ5q1sfg/IKHdL5oBv/4Ol0Y8l+MBpPlAaWHNvEZkcz5aXMnWHtXMGFOtvBGX4RwYlj3BkxcM50SA/ZbN0gbJBTEkH7laO5D6Zysu782GQovfclG2mBnR/R/ca+QzcrPHJ/SNe7Q==",
+    "previousHash": "3e2baab762276e8d534bc934745f323a287958e7ca97a0fe1c69bfac55be9c51",
+    "nonce": 0,
+    "blockHash": "f44a5a2a1175205a73bdaab9a33e6f3c51a23f09cb7d1cb2bec14a57081a73a1"
   }
 ]

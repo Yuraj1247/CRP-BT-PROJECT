@@ -227,9 +227,15 @@ export default function CreateCertificate() {
               <Mail className="w-4 h-4 text-emerald-700" />
               <span>
                 <strong>Email Delivery:</strong>{' '}
-                {generatedResult.emailStatus?.sent
-                  ? `Delivered to ${formData.recipientEmail}`
-                  : `Simulated. (To send real emails, set ADMIN_EMAIL and ADMIN_APP_PASSWORD in backend/.env)`}
+                {generatedResult.emailStatus?.sent ? (
+                  <span className="text-emerald-800 font-semibold">
+                    Delivered successfully to {formData.recipientEmail}
+                  </span>
+                ) : (
+                  <span className="text-amber-900 font-medium">
+                    {generatedResult.emailStatus?.reason || 'Email could not be dispatched.'}
+                  </span>
+                )}
               </span>
             </div>
             <button

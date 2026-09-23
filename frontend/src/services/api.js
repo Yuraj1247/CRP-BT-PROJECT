@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-// Live deployed Render Backend URL with environment variable fallback
-const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || 'https://crp-bt-project-final.onrender.com';
+// Automatically detect environment: use local backend during local development, or Render URL in production
+const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const DEFAULT_BACKEND = isLocalhost ? 'http://localhost:5000' : 'https://crp-bt-project-final.onrender.com';
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || DEFAULT_BACKEND;
 const API_BASE = `${BACKEND_URL.replace(/\/+$/, '')}/api/certificates`;
 
 const api = axios.create({

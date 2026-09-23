@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Live deployed Render Backend URL with environment variable fallback
-const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || 'https://crp-bt-project.onrender.com';
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL || 'https://crp-bt-project-final.onrender.com';
 const API_BASE = `${BACKEND_URL.replace(/\/+$/, '')}/api/certificates`;
 
 const api = axios.create({

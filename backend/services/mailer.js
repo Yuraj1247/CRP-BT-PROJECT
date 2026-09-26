@@ -6,6 +6,25 @@ dotenv.config();
  * Creates Nodemailer Transporter using ADMIN_EMAIL and ADMIN_APP_PASSWORD
  */
 function createTransporter() {
+  const brevoSmtpKey = (process.env.BREVO_SMTP_KEY || '').trim();
+  const brevoSmtpUser = (process.env.BREVO_SMTP_USER || process.env.ADMIN_EMAIL || '').trim();
+
+  // 1. If Brevo SMTP Relay key is provided
+  if (brevoSmtpKey && brevoSmtpUser) {
+    return nodemailer.createTransport({
+      host: 'smtp-relay.brevo.com',
+      port: 587,
+      secure: false,
+      auth: {
+        user: brevoSmtpUser,
+        pass: brevoSmtpKey
+      },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000
+    });
+  }
+
   const adminEmail = (process.env.ADMIN_EMAIL || '').trim();
   const adminPassword = (process.env.ADMIN_APP_PASSWORD || '').trim().replace(/\s+/g, '');
 
@@ -13,7 +32,7 @@ function createTransporter() {
     return null;
   }
 
-  // Use direct SSL on port 465 with explicit connection timeouts
+  // 2. Use direct SSL on port 465 for Gmail SMTP with explicit connection timeouts
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,

@@ -216,6 +216,30 @@ export class FirebaseBackendService {
           createdAt: serverTimestamp()
         });
         emailStatus = { sent: true, reason: 'Queued in Firebase Firestore mail collection', method: 'firebase-trigger-email' };
+
+        // Optional: If VITE_BREVO_API_KEY is configured in Vercel, dispatch directly via HTTPS REST API
+        const brevoKey = import.meta.env.VITE_BREVO_API_KEY;
+        const senderEmail = import.meta.env.VITE_ADMIN_EMAIL || 'auth.designaurastudios@gmail.com';
+        if (brevoKey) {
+          try {
+            await fetch('https://api.brevo.com/v3/smtp/email', {
+              method: 'POST',
+              headers: {
+                'api-key': brevoKey.trim(),
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                sender: { name: issuerName, email: senderEmail },
+                to: [{ email: recipientEmail, name: recipientName }],
+                subject: `Official Certificate: ${courseTitle} - ${recipientName} (${certificateId})`,
+                htmlContent: `<h2>Congratulations ${recipientName}!</h2><p>Your official digital certificate for <strong>${courseTitle}</strong> has been issued by ${issuerName}.</p><p><a href="${verificationUrl}">Verify Certificate Online &rarr;</a></p>`
+              })
+            });
+            emailStatus = { sent: true, method: 'brevo-https-direct' };
+          } catch (e) {
+            console.warn('Client-side email API dispatch note:', e);
+          }
+        }
       } catch (err) {
         emailStatus = { sent: false, reason: err.message };
       }

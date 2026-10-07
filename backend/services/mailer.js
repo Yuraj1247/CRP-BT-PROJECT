@@ -4,36 +4,16 @@ import { queueFirebaseEmail, updateFirebaseEmailDelivery, isFirebaseConnected } 
 dotenv.config();
 
 /**
- * Creates Nodemailer Transporter using ADMIN_EMAIL and ADMIN_APP_PASSWORD
+ * Creates Gmail Direct SSL Transporter
  */
-function createTransporter() {
-  const brevoSmtpKey = (process.env.BREVO_SMTP_KEY || '').trim();
-  const brevoSmtpUser = (process.env.BREVO_SMTP_USER || process.env.ADMIN_EMAIL || '').trim();
-
-  // 1. If Brevo SMTP Relay key is provided
-  if (brevoSmtpKey && brevoSmtpUser) {
-    return nodemailer.createTransport({
-      host: 'smtp-relay.brevo.com',
-      port: 587,
-      secure: false,
-      auth: {
-        user: brevoSmtpUser,
-        pass: brevoSmtpKey
-      },
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 10000
-    });
-  }
-
+function createGmailTransporter() {
   const adminEmail = (process.env.ADMIN_EMAIL || '').trim();
   const adminPassword = (process.env.ADMIN_APP_PASSWORD || '').trim().replace(/\s+/g, '');
 
-  if (!adminEmail || !adminPassword) {
+  if (!adminEmail || !adminPassword || adminEmail === 'your_admin_email@gmail.com') {
     return null;
   }
 
-  // 2. Use direct SSL on port 465 for Gmail SMTP with explicit connection timeouts
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
@@ -50,6 +30,32 @@ function createTransporter() {
     socketTimeout: 10000
   });
 }
+
+/**
+ * Creates Brevo SMTP Relay Transporter
+ */
+function createBrevoTransporter() {
+  const brevoSmtpKey = (process.env.BREVO_SMTP_KEY || '').trim();
+  const brevoSmtpUser = (process.env.BREVO_SMTP_USER || process.env.ADMIN_EMAIL || '').trim();
+
+  if (!brevoSmtpKey || !brevoSmtpUser) {
+    return null;
+  }
+
+  return nodemailer.createTransport({
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false,
+    auth: {
+      user: brevoSmtpUser,
+      pass: brevoSmtpKey
+    },
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000
+  });
+}
+
 
 /**
  * Sends email via Brevo REST API (HTTPS Port 443 - completely unblocked on Render / cloud)
@@ -365,48 +371,77 @@ export async function sendCertificateEmail({
     }
   }
 
-  // Step 4: Gmail SMTP Dispatch (Direct Delivery)
-  if (adminEmail && adminPassword && adminEmail !== 'your_admin_email@gmail.com') {
-    const transporter = createTransporter();
-    if (transporter) {
-      try {
-        const mailOptions = {
-          from: `"${issuerName}" <${adminEmail}>`,
-          to: recipientEmail,
-          subject,
-          html: htmlContent,
-          attachments
-        };
+  // Step 4: Try Brevo SMTP Relay if configured
+  const brevoTransporter = createBrevoTransporter();
+  if (brevoTransporter) {
+    try {
+      const mailOptions = {
+        from: `"${issuerName}" <${process.env.BREVO_SMTP_USER || adminEmail}>`,
+        to: recipientEmail,
+        subject,
+        html: htmlContent,
+        attachments
+      };
 
-        const info = await transporter.sendMail(mailOptions);
-        await updateFirebaseEmailDelivery(firebaseQueueResult.mailId, {
-          state: 'SUCCESS',
-          provider: 'gmail-smtp',
-          messageId: info.messageId,
-          sentAt: new Date().toISOString()
-        });
-        console.log(`✉️ Certificate email sent successfully via Gmail to ${recipientEmail}: ${info.messageId}`);
+      const info = await brevoTransporter.sendMail(mailOptions);
+      await updateFirebaseEmailDelivery(firebaseQueueResult.mailId, {
+        state: 'SUCCESS',
+        provider: 'brevo-smtp',
+        messageId: info.messageId,
+        sentAt: new Date().toISOString()
+      });
+      console.log(`✉️ Certificate email sent successfully via Brevo SMTP to ${recipientEmail}: ${info.messageId}`);
+      return {
+        sent: true,
+        method: 'brevo-smtp',
+        messageId: info.messageId,
+        firebaseMailId: firebaseQueueResult.mailId
+      };
+    } catch (error) {
+      console.warn('Brevo SMTP Relay warning, falling back to Gmail SMTP:', error.message);
+    }
+  }
+
+  // Step 5: Direct Gmail SSL Transporter (smtp.gmail.com:465)
+  const gmailTransporter = createGmailTransporter();
+  if (gmailTransporter) {
+    try {
+      const mailOptions = {
+        from: `"${issuerName}" <${adminEmail}>`,
+        to: recipientEmail,
+        subject,
+        html: htmlContent,
+        attachments
+      };
+
+      const info = await gmailTransporter.sendMail(mailOptions);
+      await updateFirebaseEmailDelivery(firebaseQueueResult.mailId, {
+        state: 'SUCCESS',
+        provider: 'gmail-smtp',
+        messageId: info.messageId,
+        sentAt: new Date().toISOString()
+      });
+      console.log(`✉️ Certificate email sent successfully via Gmail to ${recipientEmail}: ${info.messageId}`);
+      return {
+        sent: true,
+        method: 'gmail-smtp',
+        messageId: info.messageId,
+        firebaseMailId: firebaseQueueResult.mailId
+      };
+    } catch (error) {
+      console.error(`❌ Gmail SMTP delivery error:`, error.message);
+      if (isFirebaseConnected) {
         return {
           sent: true,
-          method: isFirebaseConnected ? 'firebase-firestore-trigger-email' : 'gmail-smtp',
-          messageId: info.messageId,
-          firebaseMailId: firebaseQueueResult.mailId
+          method: 'firebase-firestore-trigger-email',
+          firebaseMailId: firebaseQueueResult.mailId,
+          note: 'Queued in Firebase Firestore mail collection for Firebase Trigger Email dispatch.'
         };
-      } catch (error) {
-        console.error(`❌ SMTP delivery failed:`, error.message);
-        if (isFirebaseConnected) {
-          return {
-            sent: true,
-            method: 'firebase-firestore-trigger-email',
-            firebaseMailId: firebaseQueueResult.mailId,
-            note: 'Queued in Firebase Firestore mail collection for Firebase Trigger Email dispatch.'
-          };
-        }
       }
     }
   }
 
-  // Step 5: If Firebase Firestore is connected, the Trigger Email document is ready
+  // Step 6: If Firebase Firestore is connected, the Trigger Email document is ready
   if (isFirebaseConnected) {
     return {
       sent: true,
@@ -421,4 +456,5 @@ export async function sendCertificateEmail({
     reason: 'Email credentials not set (ADMIN_EMAIL & ADMIN_APP_PASSWORD) and Firebase not connected'
   };
 }
+
 

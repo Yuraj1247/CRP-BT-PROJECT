@@ -16,7 +16,7 @@ export default function Footer() {
               Firebase Spark Free Plan
             </span>
             <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-              Nodemailer Dispatch
+              Firebase & Gmail Dispatch
             </span>
           </div>
         </div>

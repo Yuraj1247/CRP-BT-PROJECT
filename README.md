@@ -2,7 +2,7 @@
 
 A full-stack, cryptographically fortified web application for generating, digitally signing, encrypting before storage, and instantly verifying digital certificates via QR Code.
 
-Built with **ReactJS** (Frontend), **ExpressJS** & **Firebase Spark Free Plan** (Backend), **Nodemailer** for automated email delivery, and a multi-layered security architecture (**AES-256-GCM**, **RSA-2048**, **SHA-256**, and an **Immutable Blockchain Ledger**).
+Built with **ReactJS** (Frontend), **ExpressJS** & **Firebase Spark Free Plan** (Backend), **Firebase Trigger Email & Gmail Dispatch** for automated email delivery, and a multi-layered security architecture (**AES-256-GCM**, **RSA-2048**, **SHA-256**, and an **Immutable Blockchain Ledger**).
 
 ---
 
@@ -20,7 +20,7 @@ Built with **ReactJS** (Frontend), **ExpressJS** & **Firebase Spark Free Plan** 
    - 🎨 **Creative Studio**: Vibrant emerald and teal border for workshops & design.
    - 🔐 **Cyber & Tech**: High-tech badge with live SHA-256 hash snippets.
    - 📜 **Formal Vintage Heritage**: Warm ivory finish with deep burgundy framing.
-7. **Nodemailer Email Dispatch**: Automatically dispatches confirmation email with attached certificate to the recipient using `ADMIN_EMAIL` and `ADMIN_APP_PASSWORD`.
+7. **Firebase Trigger Email & Gmail Dispatch**: Automatically queues emails to Firebase Firestore's `mail` collection (official Firebase `firestore-send-email` Trigger Email extension standard) and dispatches directly via Gmail SMTP (`smtp.gmail.com:465`).
 8. **Simple & Light UI**: Fast, uncluttered, light-themed interface designed for clarity and efficiency.
 
 ---
@@ -54,7 +54,7 @@ In `backend/.env`:
 ```env
 PORT=5000
 
-# Nodemailer Configuration (for participant email delivery)
+# Gmail SMTP Configuration
 ADMIN_EMAIL=your_admin_email@gmail.com
 ADMIN_APP_PASSWORD=your_gmail_app_password
 
@@ -66,7 +66,10 @@ FIREBASE_PROJECT_ID=cert-secure-spark-demo
 # FIREBASE_SERVICE_ACCOUNT_PATH=./serviceAccountKey.json
 ```
 
-> **Gmail App Password Note**: To send emails with Gmail, enable 2-Step Verification in your Google Account and generate an **App Password** under Security > App Passwords.
+> **Firebase "Trigger Email" / Gmail Note**:
+> 1. Emails are written directly to Firebase Firestore's `mail` collection using the official Firebase Trigger Email extension (`firestore-send-email`) schema.
+> 2. Direct Gmail delivery is executed using your Gmail address and **App Password** generated under Google Account > Security > App Passwords.
+
 
 ### 3. Run Backend Server
 ```bash

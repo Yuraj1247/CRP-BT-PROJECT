@@ -90,7 +90,7 @@ export class CertificateService {
 
     await saveCertificateRecord(certificateId, record);
 
-    // 7. Nodemailer: Dispatch email to recipient if email is present
+    // 7. Firebase Trigger Email & Gmail Dispatch: Queue and deliver to recipient
     let emailStatus = { sent: false, reason: 'No email provided' };
     if (recipientEmail) {
       emailStatus = await sendCertificateEmail({

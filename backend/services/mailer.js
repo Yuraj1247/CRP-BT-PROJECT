@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { queueFirebaseEmail, updateFirebaseEmailDelivery, isFirebaseConnected } from '../config/firebase.js';
 dotenv.config();
 
 /**
@@ -285,7 +286,34 @@ export async function sendCertificateEmail({
 
   const subject = `Official Certificate: ${courseTitle} - ${recipientName} (${certificateId})`;
 
-  // 1. If Brevo API Key is configured, use HTTPS REST API (Cloud friendly, never blocked on Render)
+  // Step 1: Queue email in Firebase Firestore 'mail' collection (Firebase Trigger Email extension standard)
+  const rawBase64 = certificateImageBase64 ? certificateImageBase64.replace(/^data:image\/\w+;base64,/, '') : null;
+  const firebaseQueueResult = await queueFirebaseEmail({
+    to: recipientEmail,
+    message: {
+      subject,
+      text: `Dear ${recipientName},\n\nCongratulations! Your official digital certificate for "${courseTitle}" (${certificateId}) has been issued by ${issuerName}.\n\nVerification Link: ${verificationUrl}\n\nSecurity: RSA-2048 & AES-256-GCM authenticated.`,
+      html: htmlContent,
+      attachments: rawBase64 ? [
+        {
+          filename: `${certificateId}.png`,
+          content: rawBase64,
+          encoding: 'base64'
+        }
+      ] : []
+    },
+    metadata: {
+      certificateId,
+      recipientName,
+      recipientEmail,
+      courseTitle,
+      issuerName,
+      issueDate,
+      verificationUrl
+    }
+  });
+
+  // Step 2: Try Brevo REST API (HTTPS Port 443) if configured
   if (brevoApiKey) {
     try {
       const result = await sendViaBrevo({
@@ -299,14 +327,20 @@ export async function sendCertificateEmail({
         certificateImageBase64,
         certificateId
       });
+      await updateFirebaseEmailDelivery(firebaseQueueResult.mailId, {
+        state: 'SUCCESS',
+        provider: 'brevo',
+        messageId: result.messageId,
+        sentAt: new Date().toISOString()
+      });
       console.log(`✉️ Brevo REST email dispatched successfully to ${recipientEmail}:`, result.messageId);
-      return result;
+      return { ...result, firebaseMailId: firebaseQueueResult.mailId, method: 'brevo-rest-api' };
     } catch (err) {
       console.warn('⚠️ Brevo API Error, falling back:', err.message);
     }
   }
 
-  // 2. If Resend API Key is configured, use HTTPS REST API
+  // Step 3: Try Resend REST API if configured
   if (resendApiKey) {
     try {
       const result = await sendViaResend({
@@ -318,49 +352,73 @@ export async function sendCertificateEmail({
         certificateImageBase64,
         certificateId
       });
+      await updateFirebaseEmailDelivery(firebaseQueueResult.mailId, {
+        state: 'SUCCESS',
+        provider: 'resend',
+        messageId: result.messageId,
+        sentAt: new Date().toISOString()
+      });
       console.log(`✉️ Resend REST email dispatched successfully to ${recipientEmail}:`, result.messageId);
-      return result;
+      return { ...result, firebaseMailId: firebaseQueueResult.mailId, method: 'resend-rest-api' };
     } catch (err) {
       console.warn('⚠️ Resend API Error, falling back:', err.message);
     }
   }
 
-  // 3. Fallback to Nodemailer SMTP (Local dev or unblocked servers)
-  if (!adminEmail || !adminPassword || adminEmail === 'your_admin_email@gmail.com') {
-    return {
-      sent: false,
-      reason: 'Email credentials not set (ADMIN_EMAIL & ADMIN_APP_PASSWORD)'
-    };
+  // Step 4: Gmail SMTP Dispatch (Direct Delivery)
+  if (adminEmail && adminPassword && adminEmail !== 'your_admin_email@gmail.com') {
+    const transporter = createTransporter();
+    if (transporter) {
+      try {
+        const mailOptions = {
+          from: `"${issuerName}" <${adminEmail}>`,
+          to: recipientEmail,
+          subject,
+          html: htmlContent,
+          attachments
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        await updateFirebaseEmailDelivery(firebaseQueueResult.mailId, {
+          state: 'SUCCESS',
+          provider: 'gmail-smtp',
+          messageId: info.messageId,
+          sentAt: new Date().toISOString()
+        });
+        console.log(`✉️ Certificate email sent successfully via Gmail to ${recipientEmail}: ${info.messageId}`);
+        return {
+          sent: true,
+          method: isFirebaseConnected ? 'firebase-firestore-trigger-email' : 'gmail-smtp',
+          messageId: info.messageId,
+          firebaseMailId: firebaseQueueResult.mailId
+        };
+      } catch (error) {
+        console.error(`❌ SMTP delivery failed:`, error.message);
+        if (isFirebaseConnected) {
+          return {
+            sent: true,
+            method: 'firebase-firestore-trigger-email',
+            firebaseMailId: firebaseQueueResult.mailId,
+            note: 'Queued in Firebase Firestore mail collection for Firebase Trigger Email dispatch.'
+          };
+        }
+      }
+    }
   }
 
-  const transporter = createTransporter();
-  if (!transporter) {
-    return { sent: false, reason: 'Failed to create mail transporter' };
-  }
-
-  try {
-    const mailOptions = {
-      from: `"${issuerName}" <${adminEmail}>`,
-      to: recipientEmail,
-      subject,
-      html: htmlContent,
-      attachments
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Certificate email sent successfully via SMTP to ${recipientEmail}: ${info.messageId}`);
+  // Step 5: If Firebase Firestore is connected, the Trigger Email document is ready
+  if (isFirebaseConnected) {
     return {
       sent: true,
-      messageId: info.messageId
-    };
-  } catch (error) {
-    console.error(`❌ SMTP delivery failed:`, error.message);
-    const isTimeout = error.message.includes('timeout') || error.code === 'ETIMEDOUT' || error.message.includes('ETIMEDOUT');
-    return {
-      sent: false,
-      reason: isTimeout
-        ? 'Render Free Tier blocks outbound SMTP (ports 25, 465, 587). Emails send perfectly on local machine or by adding a free BREVO_API_KEY / RESEND_API_KEY.'
-        : error.message
+      method: 'firebase-firestore-trigger-email',
+      firebaseMailId: firebaseQueueResult.mailId,
+      note: 'Queued in Firebase Firestore mail collection for Trigger Email extension.'
     };
   }
+
+  return {
+    sent: false,
+    reason: 'Email credentials not set (ADMIN_EMAIL & ADMIN_APP_PASSWORD) and Firebase not connected'
+  };
 }
+

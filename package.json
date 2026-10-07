@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Secure Certificate Generation, RSA Digital Signature, AES Storage, Blockchain Ledger, and QR Verification",
   "scripts": {
+    "dev": "npm run dev --prefix frontend",
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
     "test:crypto": "npm run test:crypto --prefix backend",

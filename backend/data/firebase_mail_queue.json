@@ -1,0 +1,22 @@
+{
+  "MAIL-1791345485615-06c2t": {
+    "to": [
+      "test.participant@gmail.com"
+    ],
+    "message": {
+      "subject": "Test Certificate Email via Firebase",
+      "text": "This is a test email queued in Firebase Trigger Email format.",
+      "html": "<h1>Certificate Ready</h1><p>Test</p>"
+    },
+    "metadata": {
+      "certificateId": "CERT-TEST-001",
+      "recipientName": "Alice Smith",
+      "queuedAt": "2026-10-07T03:58:05.615Z"
+    },
+    "delivery": {
+      "state": "PENDING",
+      "attempts": 0,
+      "queuedAt": "2026-10-07T03:58:05.616Z"
+    }
+  }
+}

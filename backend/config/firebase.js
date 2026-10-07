@@ -164,6 +164,109 @@ export async function deleteCertificateRecord(certificateId) {
 }
 
 /**
+ * Queue Email in Firebase Firestore 'mail' collection (Firebase Trigger Email extension standard)
+ */
+export async function queueFirebaseEmail({ to, message, metadata = {} }) {
+  const mailId = `MAIL-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const mailDoc = {
+    to: Array.isArray(to) ? to : [to],
+    message: {
+      subject: message.subject || '',
+      text: message.text || '',
+      html: message.html || '',
+      ...(message.attachments ? { attachments: message.attachments } : {})
+    },
+    metadata: {
+      ...metadata,
+      queuedAt: new Date().toISOString()
+    },
+    delivery: {
+      state: 'PENDING',
+      attempts: 0,
+      queuedAt: new Date().toISOString()
+    }
+  };
+
+  // 1. Save to local email queue store
+  const MAIL_QUEUE_FILE = path.join(DATA_DIR, 'firebase_mail_queue.json');
+  try {
+    let queueStore = {};
+    if (fs.existsSync(MAIL_QUEUE_FILE)) {
+      try {
+        queueStore = JSON.parse(fs.readFileSync(MAIL_QUEUE_FILE, 'utf8'));
+      } catch {
+        queueStore = {};
+      }
+    }
+    queueStore[mailId] = mailDoc;
+    fs.writeFileSync(MAIL_QUEUE_FILE, JSON.stringify(queueStore, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Local mail queue persistence warning:', err.message);
+  }
+
+  // 2. Save to Firebase Firestore 'mail' collection if connected
+  let firestoreDocId = mailId;
+  if (isFirebaseConnected && db) {
+    try {
+      const docRef = await db.collection('mail').add({
+        ...mailDoc,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      firestoreDocId = docRef.id;
+      console.log(`🔥 Queued email in Firebase Firestore 'mail' collection [Doc ID: ${firestoreDocId}]`);
+    } catch (err) {
+      console.error('Firebase Firestore email queue error:', err.message);
+    }
+  } else {
+    console.log(`📨 Queued email locally in Firebase Trigger Email format [ID: ${mailId}]`);
+  }
+
+  return {
+    queued: true,
+    mailId: firestoreDocId,
+    isCloudFirestore: isFirebaseConnected
+  };
+}
+
+/**
+ * Update Email Delivery status in Firebase Firestore 'mail' collection
+ */
+export async function updateFirebaseEmailDelivery(mailId, deliveryUpdate) {
+  if (isFirebaseConnected && db && mailId) {
+    try {
+      const docRef = db.collection('mail').doc(mailId);
+      await docRef.set({
+        delivery: {
+          ...deliveryUpdate,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }
+      }, { merge: true });
+      console.log(`🔥 Updated Firebase 'mail' delivery status for [Doc ID: ${mailId}]`);
+    } catch (err) {
+      console.warn('Firebase email delivery status update note:', err.message);
+    }
+  }
+
+  // Also update local queue file
+  const MAIL_QUEUE_FILE = path.join(DATA_DIR, 'firebase_mail_queue.json');
+  try {
+    if (fs.existsSync(MAIL_QUEUE_FILE)) {
+      const queueStore = JSON.parse(fs.readFileSync(MAIL_QUEUE_FILE, 'utf8'));
+      if (queueStore[mailId]) {
+        queueStore[mailId].delivery = {
+          ...queueStore[mailId].delivery,
+          ...deliveryUpdate,
+          updatedAt: new Date().toISOString()
+        };
+        fs.writeFileSync(MAIL_QUEUE_FILE, JSON.stringify(queueStore, null, 2), 'utf8');
+      }
+    }
+  } catch (err) {
+    // Ignore local sync warning
+  }
+}
+
+/**
  * Get all certificates list
  */
 export async function getAllCertificates() {
@@ -172,3 +275,4 @@ export async function getAllCertificates() {
 }
 
 export { isFirebaseConnected };
+
